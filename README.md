@@ -27,7 +27,7 @@ Startup → Cloud Migration
 | Project | Status |
 |---|---|
 | IAM Identity Management | ✅ Complete |
-| EC2 Compute Environment | 🔄 In Progress |
+| EC2 Compute Environment | ⬜ In Progress |
 | S3 Storage | ⬜ Planned |
 | VPC Networking | ⬜ Planned |
 
