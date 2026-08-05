@@ -79,4 +79,4 @@ An Ubuntu EC2 instance was created with:
 
 Evidence:
 
-The EC2 deployment screenshot can be found in:
+The EC2 deployment screenshot can be found in: https://github.com/drexzw/ubuntu-tech-solutions-cloud/tree/main/projects/002-ec2-deployment-lab/screenshots
