@@ -63,7 +63,7 @@ The following Linux commands were used to verify the server:
 - Network connections
 - Apache service status
 
-A full list of commands used can be found in: 
+A full list of commands used can be found in: https://github.com/drexzw/ubuntu-tech-solutions-cloud/blob/main/projects/002-ec2-deployment-lab/commands.md
 
 
 
