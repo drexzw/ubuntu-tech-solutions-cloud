@@ -111,6 +111,6 @@ This lab provided hands-on experience with AWS S3 configuration, object storage,
 
 ## Documentation
 
-* [Commands](./commands.md)
+* [Commands](https://github.com/drexzw/ubuntu-tech-solutions-cloud/blob/main/projects/003-s3-static-website-lab-hosting/commands.md)
 * [Deployment Notes](https://github.com/drexzw/ubuntu-tech-solutions-cloud/blob/main/projects/003-s3-static-website-lab-hosting/commands.md)
 * [Screenshots](./screenshots/)
