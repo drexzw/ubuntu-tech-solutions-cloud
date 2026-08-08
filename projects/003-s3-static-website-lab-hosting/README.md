@@ -72,7 +72,7 @@ S3 Bucket
 Screenshots taken during the lab are stored separately.
 
 **Screenshots:**
-[View Screenshots](./screenshots/)
+[View Screenshots](https://github.com/drexzw/ubuntu-tech-solutions-cloud/tree/main/projects/003-s3-static-website-lab-hosting/screenshots)
 
 ---
 
