@@ -84,28 +84,32 @@ CloudWatch Dashboard   CloudWatch Alarm
                        Email Alert
 ```
 
-## Current Progress
+## Current Progress — Complete
 
-The Ubuntu EC2 instance was successfully located in the EC2 console and identified as `ubuntu-web-server`.
+The Ubuntu EC2 instance was located in the EC2 console and confirmed running as `ubuntu-web-server` (`i-0183ac253ea656367`).
 
-The `CPUUtilization` metric was located under the EC2 per-instance metrics in CloudWatch.
+The `CPUUtilization` metric was located under EC2 per-instance metrics in CloudWatch, and an initial baseline of approximately 3.9% CPU utilization was observed.
 
-CloudWatch successfully displayed CPU utilization data for the instance, confirming that the EC2 instance was publishing the expected metric.
+A CloudWatch dashboard (`Ubuntu-EC2-High-CPU`) was created showing CPUUtilization, NetworkIn, NetworkOut, and StatusCheckFailed for the instance.
 
-The initial observed CPU utilization was approximately 3.9%, indicating relatively low CPU activity at the time of observation.
+A CloudWatch alarm (`Ubuntu-EC2-High-CPU`) was created with a threshold of CPUUtilization > 70% for 1 datapoint within 5 minutes, and an Amazon SNS topic was configured and subscribed to an email address for notifications.
+
+CPU load was generated on the instance using the `stress` utility. CloudWatch detected the increase, the alarm transitioned from OK to **ALARM** (peaking at 99.6% CPU), and an SNS email notification was received confirming the state change with full alarm details (name, threshold, timestamp, instance ID).
+
+The stress test was stopped, CPU utilization dropped, and the alarm returned to the **OK** state, confirming recovery.
 
 ## Evidence
 
-Screenshots collected for this project include:
+Screenshots collected for this project:
 
-1. `01-ec2-instance-running.png` — Ubuntu EC2 instance running.
-2. `02-cloudwatch-cpu-metric.png` — CPU utilization metric in CloudWatch.
-3. `03-cloudwatch-dashboard.png` — CloudWatch monitoring dashboard.
-4. `04-cloudwatch-alarm-ok.png` — CPU alarm in the OK state.
-5. `05-high-cpu-detected.png` — Increased CPU utilization during testing.
-6. `06-cloudwatch-alarm-triggered.png` — CloudWatch alarm entering the ALARM state.
-7. `07-sns-alert-email.png` — SNS email notification.
-8. `08-cloudwatch-alarm-recovered.png` — Alarm returning to the OK state.
+1. `01-ec2-instance-running.png` — Ubuntu EC2 instance (`ubuntu-web-server`) confirmed running in the EC2 console.
+2. `02-cloudwatch-cpu-metric.png` — CPUUtilization metric graphed in CloudWatch, confirming the instance is publishing data.
+3. `03-cloudwatch-dashboard.png` — CloudWatch dashboard showing CPUUtilization, NetworkIn, NetworkOut, and StatusCheckFailed.
+4. `04-cloudwatch-alarm-ok.png` — The `Ubuntu-EC2-High-CPU` alarm prior to the stress test, in the **Insufficient Data** state (newly created alarms sit here until enough datapoints have been collected).
+5. `05-high-cpu-detected.png` — CPUUtilization metric climbing after the stress test was started.
+6. `06-cloudwatch-alarm-triggered.png` — The alarm entering the **ALARM** state as CPU utilization crossed the 70% threshold, peaking at 99.6%.
+7. `07-sns-alert-email.png` — SNS email notification confirming the OK → ALARM state change, with full alarm and metric details.
+8. `08-cloudwatch-alarm-recovered.png` — The alarm returning to the **OK** state after the stress test was stopped and CPU utilization dropped.
 
 ## Skills Practiced
 
