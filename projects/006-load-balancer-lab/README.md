@@ -41,7 +41,7 @@ The solution should:
      | Web Server 01    |        | Web Server 02    |
      | Ubuntu + Apache  |        | Ubuntu + Apache  |
      | Public Subnet A  |        | Public Subnet B  |
-     | 10.0.0.0/24      |        | 10.0.2.0/24      |
+     | 10.0.0.0/24      |        | 10.0.1.0/24      |
      +------------------+        +------------------+
               |                           |
              AZ-A                        AZ-B
@@ -54,16 +54,16 @@ The solution should:
 * VPC: `ubuntu-tech-vpc`
 * VPC CIDR: `10.0.0.0/16`
 * Internet Gateway: `ubuntu-tech-igw`
-* Public Subnet A: `10.0.0.0/24`
-* Public Subnet B: `10.0.2.0/24`
+* Public Subnet A: `10.0.0.0/24` (`ubuntu-tech-public-subnet-a`)
+* Public Subnet B: `10.0.1.0/24` (`ubuntu-tech-public-b`)
 * Public Route Table: `ubuntu-tech-public-rt`
 * Internet route: `0.0.0.0/0 → Internet Gateway`
 
 ### Compute
 
 * `ubuntu-tech-web-01`
-* `ubuntu-tech-web-02`
-* Ubuntu Server 24.04 LTS
+* `ubuntu-tech-web-web-2` *(naming inconsistency — this instance was intended to be named `ubuntu-tech-web-02`; the console shows `ubuntu-tech-web-web-2`. Left as-is here to match the actual resource rather than the intended name.)*
+* Ubuntu Server 26.04 LTS
 * Instance type: `t3.micro`
 * Apache HTTP Server
 
@@ -73,7 +73,7 @@ The solution should:
 * Target Group: `ubuntu-tech-web-tg`
 * Protocol: HTTP
 * Port: 80
-* Health check path: `/`
+* Health check path: `/` *(not pictured — no screenshot captures the target group's Health Checks tab; this reflects the configured value, not a screenshotted one)*
 
 ### Security
 
@@ -83,6 +83,8 @@ The solution should:
 The ALB accepts public HTTP traffic, while the web servers accept HTTP traffic from the ALB security group.
 
 This creates a basic security boundary between the public entry point and the backend servers.
+
+> **Note on evidence:** the screenshot of `ubuntu-tech-alb-sg` (taken immediately after creation) shows **0 inbound rules**. Since the ALB was reachable over HTTP in later tests, an inbound rule for `HTTP:80` from `0.0.0.0/0` must have been added afterward, but no screenshot documents that step. Treat the "ALB SG permits HTTP from 0.0.0.0/0" claim below as **not pictured**.
 
 ## Implementation
 
@@ -104,7 +106,7 @@ Two Ubuntu EC2 instances were deployed:
 
 ```text
 Web Server 01 → 10.0.0.0/24 → AZ-A
-Web Server 02 → 10.0.2.0/24 → AZ-B
+Web Server 02 → 10.0.1.0/24 → AZ-B
 ```
 
 Apache was installed on both servers.
@@ -139,6 +141,8 @@ Port 80
 Health check path /
 ```
 
+*(Health check path confirmed via configuration, not directly screenshotted — see note above.)*
+
 The ALB uses these health checks to determine which servers are capable of handling requests.
 
 ### 4. Application Load Balancer
@@ -159,12 +163,14 @@ ubuntu-tech-web-tg
 
 ### 5. Security Groups
 
-The ALB security group permits:
+The ALB security group is intended to permit:
 
 ```text
 HTTP : 80
 Source: 0.0.0.0/0
 ```
+
+*(Not directly pictured — see evidence note above.)*
 
 The web server security group permits:
 
@@ -254,3 +260,15 @@ Key evidence includes:
 7. Unhealthy target during failure testing
 8. Application availability during failure
 9. Target recovery
+
+**Not pictured:**
+
+* The ALB security group's inbound HTTP rule (only the pre-rule, 0-inbound-rule state was captured)
+* The target group's Health Checks tab (path `/` reflects configuration, not a screenshot)
+
+## Changelog
+
+* Corrected Public Subnet B CIDR from `10.0.2.0/24` to `10.0.1.0/24` to match the actual subnet and instance evidence.
+* Corrected Ubuntu version from `24.04 LTS` to `26.04 LTS` to match the SSH session screenshot.
+* Flagged the `ubuntu-tech-web-02` / `ubuntu-tech-web-web-2` naming mismatch between the documentation and the actual AWS console.
+* Labeled the ALB security group's public HTTP rule and the target group's health-check path as **not pictured**, since no screenshot directly evidences either.
