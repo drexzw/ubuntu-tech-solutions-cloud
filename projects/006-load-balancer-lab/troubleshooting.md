@@ -48,6 +48,8 @@ Port: 80
 Path: /
 ```
 
+*(Not pictured — no screenshot captures the target group's Health Checks tab; this reflects the configured value.)*
+
 The root webpage must return successfully.
 
 ---
@@ -61,7 +63,7 @@ Check:
 3. Listener forwards to `ubuntu-tech-web-tg`
 4. Target group contains both EC2 instances
 5. At least one target is healthy
-6. ALB security group permits HTTP port 80
+6. ALB security group permits HTTP port 80 *(not pictured — the only ALB-SG screenshot was taken right after creation, showing 0 inbound rules; a rule was evidently added afterward since the ALB was reachable, but that step was not screenshotted)*
 7. Web-server security group permits HTTP from the ALB security group
 
 ---
@@ -149,3 +151,8 @@ A load balancer does not simply distribute traffic between servers.
 It uses health checks to determine which servers are capable of receiving traffic.
 
 A backend failure therefore does not necessarily become an application outage when healthy targets remain available.
+
+## Changelog
+
+* Labeled the target group's health-check path (`/`) as **not pictured** — no screenshot of the Health Checks tab exists.
+* Labeled the ALB security group's inbound HTTP rule as **not pictured** — the only ALB-SG screenshot shows 0 inbound rules at creation time, with no follow-up screenshot showing the rule added.
