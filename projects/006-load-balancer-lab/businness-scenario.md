@@ -80,13 +80,15 @@ HTTP : 80
 Path: /
 ```
 
+*(Not pictured — no screenshot captures the target group's Health Checks tab; this reflects the configured value rather than a screenshotted one.)*
+
 The load balancer uses the results of these health checks to determine which servers are available to receive traffic.
 
 If a server stops responding correctly, it is marked unhealthy and removed from normal traffic routing.
 
 ## Security Design
 
-The public-facing Application Load Balancer accepts HTTP traffic from the internet.
+The public-facing Application Load Balancer accepts HTTP traffic from the internet. *(Not pictured — the only screenshot of the ALB's security group shows 0 inbound rules at creation time; a public HTTP rule was evidently added afterward, since the ALB was reachable in later tests, but that step was not screenshotted.)*
 
 The backend web servers use a separate security group.
 
@@ -169,3 +171,8 @@ The Ubuntu Tech Solutions environment was redesigned from a single-server web ap
 The completed solution distributes traffic across multiple Ubuntu servers, monitors backend health, and continues serving users when an individual web server becomes unavailable.
 
 This demonstrates how cloud infrastructure can be designed around business requirements rather than simply deploying individual AWS services.
+
+## Changelog
+
+* Labeled the health-check path (`/`) as **not pictured** — no screenshot of the Health Checks tab exists.
+* Labeled the ALB's public HTTP inbound rule as **not pictured** — the only ALB-SG screenshot shows 0 inbound rules at creation, with no follow-up screenshot showing the rule added.
