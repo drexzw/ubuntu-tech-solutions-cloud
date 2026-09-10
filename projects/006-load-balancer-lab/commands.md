@@ -9,6 +9,8 @@ sudo apt update
 sudo apt install apache2 -y
 ```
 
+*(Not pictured — the screenshots capture `apt update` running and Apache already active immediately after; the install command itself was not screenshotted.)*
+
 ## Check Apache Status
 
 ```bash
@@ -117,3 +119,7 @@ The remaining configuration was performed through the AWS Management Console:
 * Application Load Balancer
 * Listener
 * Health Checks
+
+## Changelog
+
+* Labeled the `apt install apache2 -y` step as **not pictured** — the screenshots show `apt update` and a subsequent active Apache status, but not the install itself.
