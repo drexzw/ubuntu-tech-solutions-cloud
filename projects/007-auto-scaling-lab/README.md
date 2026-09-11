@@ -118,8 +118,10 @@ The completed environment was validated by checking:
 * Instances registered with the ALB target group.
 * Target group health checks eventually reported the instances as healthy.
 * The ALB successfully served the web application.
-* Terminating an ASG-managed instance caused the Auto Scaling Group to launch a replacement.
-* The replacement instance was created from the corrected Ubuntu Launch Template.
+* An ASG-managed instance was detached/terminated, and the Auto Scaling Group launched a replacement to return to desired capacity (screenshots 04–07).
+* The replacement instance was created from the Ubuntu Launch Template shown in screenshot 01.
+
+**Not pictured:** the environment was never screenshotted scaling out beyond the baseline of 2 instances. Screenshots 06–07 show the Auto Scaling Group and Target Group reconciling back down to the desired capacity of 2 (clearing duplicate instances left over from the ALB lab — see Issue 2 in `troubleshooting.md`), not a deliberate scale-to-maximum-capacity (4) test.
 
 ## Key Concepts Demonstrated
 
@@ -150,6 +152,8 @@ A major lesson from this lab was the importance of maintaining consistency betwe
 An incorrect Amazon Linux AMI was initially selected instead of the Ubuntu AMI used by the existing web servers. This caused troubleshooting confusion because Apache is commonly managed as `apache2` on Ubuntu, while Amazon Linux uses a different package/service configuration.
 
 The Launch Template was corrected to use Ubuntu, and the Auto Scaling Group was updated accordingly.
+
+**Not pictured:** the incorrect Amazon Linux configuration, the resulting `apache2.service could not be found` error, and the intermediate launch template version were not screenshotted. Screenshot 01 shows only the final, corrected Ubuntu launch template (a single "Version 1 (Default)"). See `troubleshooting.md`, Issue 1, for the full write-up of this diagnostic process.
 
 Another lesson was that Auto Scaling and Target Group state changes are not always instantaneous. Instances may temporarily appear as unhealthy, draining, or terminating while AWS completes health checks and lifecycle operations.
 
