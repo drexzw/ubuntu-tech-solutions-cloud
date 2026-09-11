@@ -36,6 +36,8 @@ The Auto Scaling Group was then updated to use the corrected Launch Template ver
 
 The incorrectly provisioned instances were terminated so that the Auto Scaling Group could launch replacement instances using the correct configuration.
 
+**Evidence:** Not pictured. Screenshot 01 (`01-launch-template-created.png`) shows only the final, corrected Ubuntu launch template — the incorrect Amazon Linux version and the `apache2.service could not be found` error were not captured.
+
 ### Lesson
 
 The AMI is a critical part of an EC2 Launch Template.
@@ -65,6 +67,8 @@ It was determined that the original ALB lab instances were still present while t
 The ASG-managed instances were identified through the Auto Scaling Group's Instance Management section.
 
 Incorrect instances were terminated when necessary, while the original healthy ALB lab servers were left untouched until the ASG configuration was confirmed.
+
+**Evidence:** `04-asg-instance-detaching-terminating.png`, `05-target-group-draining-scaling-event.png`, `06-asg-updating-capacity-4-instances.png`, and `07-target-group-healthy-post-scaling.png` capture this cleanup. Note that despite their filenames, 06 and 07 do not show a scale-to-maximum-capacity test — Desired capacity remains 2 throughout; the extra instances visible are the original ALB-lab servers being reconciled out, not a deliberate scale-out event.
 
 ### Lesson
 
