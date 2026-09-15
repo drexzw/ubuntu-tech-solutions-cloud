@@ -1,177 +1,116 @@
-# RDS PostgreSQL Lab — Commands
+# Ubuntu Tech Solutions — RDS Connectivity Commands
 
-This file contains the commands used during the Ubuntu Tech Solutions RDS PostgreSQL lab.
+This document lists the commands run on the EC2 client instance to install a PostgreSQL client, connect securely to the `ubuntu-tech-rds` instance, and validate the database. For the reasoning behind the IAM role step, see `troubleshooting.md`.
+
+## 1. Check for a PostgreSQL Client
+
+```bash
+psql --version
+```
+
+### Purpose
+
+Confirms whether a PostgreSQL client is already installed. On this instance it was not.
 
 ---
 
-## PostgreSQL Client
-
-### Connect to the RDS PostgreSQL Instance
+## 2. Install the PostgreSQL Client
 
 ```bash
-psql -h <RDS-ENDPOINT> -U postgres -d postgres
+sudo apt install postgresql-client-common
 ```
 
-### Connect to a Specific Database
+### Purpose
 
-```bash
-psql -h <RDS-ENDPOINT> -U postgres -d ubuntu_tech_db
-```
-
-### Exit PostgreSQL
-
-```sql
-\q
-```
+Installs the client package suggested by Ubuntu after the missing-`psql` check.
 
 ---
 
-# PostgreSQL Database Management
+## 3. Download the RDS TLS Certificate Bundle
 
-### Display Available Databases
-
-```sql
-\l
+```bash
+curl -o global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 ```
 
-### Create the Ubuntu Tech Solutions Database
+### Purpose
 
-```sql
-CREATE DATABASE ubuntu_tech_db;
-```
-
-Expected output:
-
-```text
-CREATE DATABASE
-```
-
-### Connect to the Application Database
-
-```sql
-\c ubuntu_tech_db
-```
-
-### Display Current Connection Information
-
-```sql
-\conninfo
-```
-
-This shows which database, user, host, and port the current PostgreSQL session is using.
-
-### Display Available Tables
-
-```sql
-\dt
-```
+Downloads Amazon's certificate bundle so the connection can be validated with `sslmode=verify-full` instead of connecting without certificate verification.
 
 ---
 
-# PostgreSQL Testing
+## 4. Set and Confirm the RDS Endpoint
 
-### Test the Current Database Connection
-
-```sql
-SELECT current_database();
+```bash
+export RDSHOST="ubuntu-tech-rds.cvsu60uas78f.us-east-2.rds.amazonaws.com"
+echo $RDSHOST
 ```
 
-Expected result:
+### Purpose
 
-```text
-ubuntu_tech_db
-```
-
-### Test the Current PostgreSQL User
-
-```sql
-SELECT current_user;
-```
-
-### Test the PostgreSQL Server Version
-
-```sql
-SELECT version();
-```
+Stores the RDS endpoint in an environment variable for reuse in the connection command below.
 
 ---
 
-# Linux Network Troubleshooting
-
-These commands can be used from the EC2 Ubuntu instance when troubleshooting connectivity to RDS.
-
-### Test DNS Resolution
+## 5. Connect to the Database
 
 ```bash
-nslookup <RDS-ENDPOINT>
+psql "host=$RDSHOST port=5432 dbname=postgres user=drex sslmode=verify-full sslrootcert=./global-bundle.pem password=$(aws secretsmanager get-secret-value --secret-id 'arn:aws:secretsmanager:us-east-2:858758523801:secret:rds!db-b920854c-e5f3-4d11-aabc-09e19e25be8d-cs3jqH' --query SecretString --output text | jq -r '.password')"
 ```
 
-or:
+### Purpose
 
-```bash
-dig <RDS-ENDPOINT>
-```
+Connects to PostgreSQL over TLS, fetching the database password from Secrets Manager at run time instead of typing or storing it. This command failed the first time it was run — see `troubleshooting.md`, Issue 1 — and succeeded after an IAM role was attached to the instance.
 
-### Test TCP Connectivity to PostgreSQL
+### Parameters
 
-```bash
-nc -zv <RDS-ENDPOINT> 5432
-```
-
-A successful result indicates that the EC2 instance can reach the RDS endpoint on PostgreSQL's TCP port.
-
-### Test Connectivity Using Telnet
-
-```bash
-telnet <RDS-ENDPOINT> 5432
-```
-
-This can also be used to determine whether TCP port 5432 is reachable.
+* `sslmode=verify-full` — validates the server certificate against `sslrootcert`, protecting against a spoofed endpoint.
+* `password=$(...)` — a subshell that calls Secrets Manager and extracts the `password` field with `jq`.
 
 ---
 
-# AWS CLI
-
-If the AWS CLI is configured on the EC2 instance, the following command can be used to verify the identity associated with the instance:
+## 6. Verify the Instance's IAM Identity
 
 ```bash
 aws sts get-caller-identity
 ```
 
-This is useful when troubleshooting IAM permissions because it shows which AWS identity the EC2 instance is using.
+### Purpose
 
-### Check the AWS Region
+Confirms which IAM identity the instance is currently using. Used to verify that `Ubuntu-Tech-RDS-EC2-Role` was actually attached and assumed before retrying the connection.
 
-```bash
-aws configure get region
+---
+
+## 7. Create and Query Test Data
+
+```sql
+CREATE TABLE employees (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    department VARCHAR(100),
+    role VARCHAR(100)
+);
+
+INSERT INTO employees (name, department, role)
+VALUES
+    ('John Smith', 'IT', 'Help Desk Technician'),
+    ('Sarah Johnson', 'HR', 'HR Specialist'),
+    ('Michael Brown', 'IT', 'Cloud Administrator');
+
+SELECT * FROM employees;
 ```
 
----
+### Purpose
 
-# Useful PostgreSQL Port Information
+Validates that the connection supports full read/write access: creating a table, inserting rows, and reading them back.
 
-| Service    | Protocol | Port |
-| ---------- | -------- | ---: |
-| PostgreSQL | TCP      | 5432 |
+## Command Summary
 
-The RDS security group must allow the EC2 instance to reach TCP port `5432`.
-
----
-
-# Command Summary
-
-| Purpose              | Command                                          |
-| -------------------- | ------------------------------------------------ |
-| Connect to RDS       | `psql -h <RDS-ENDPOINT> -U postgres -d postgres` |
-| List databases       | `\l`                                             |
-| Create database      | `CREATE DATABASE ubuntu_tech_db;`                |
-| Connect to database  | `\c ubuntu_tech_db`                              |
-| Show connection info | `\conninfo`                                      |
-| List tables          | `\dt`                                            |
-| Current database     | `SELECT current_database();`                     |
-| Current user         | `SELECT current_user;`                           |
-| PostgreSQL version   | `SELECT version();`                              |
-| Test DNS             | `nslookup <RDS-ENDPOINT>`                        |
-| Test port 5432       | `nc -zv <RDS-ENDPOINT> 5432`                     |
-| Check AWS identity   | `aws sts get-caller-identity`                    |
-| Exit PostgreSQL      | `\q`                                             |
+| Command | Purpose |
+| --- | --- |
+| `psql --version` | Check for an existing PostgreSQL client |
+| `sudo apt install postgresql-client-common` | Install the PostgreSQL client package |
+| `curl -o global-bundle.pem ...` | Download the RDS TLS certificate bundle |
+| `export RDSHOST=... / echo $RDSHOST` | Set and confirm the RDS endpoint |
+| `psql "host=$RDSHOST ..."` | Connect to RDS using a password fetched from Secrets Manager |
+| `aws sts get-caller-identity` | Confirm the instance's active IAM role |
+| `CREATE TABLE / INSERT / SELECT` | Create and validate test data in PostgreSQL |
