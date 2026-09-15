@@ -1,312 +1,69 @@
-# RDS PostgreSQL Lab — Troubleshooting
+# Troubleshooting
 
-This document records problems encountered while configuring and testing the Ubuntu Tech Solutions RDS PostgreSQL environment.
+This document records troubleshooting performed during the RDS PostgreSQL lab.
 
----
-
-# Issue 1 — EC2 Could Not Connect to RDS
-
-## Problem
-
-The Ubuntu EC2 instance was initially unable to establish the expected connection to the Amazon RDS PostgreSQL database.
-
-The initial assumption was that the database should be accessible because the EC2 instance and RDS database had been configured within the AWS environment.
-
-However, the connection attempt was unsuccessful.
+The purpose of documenting these issues is to show the actual diagnostic process used during deployment rather than only documenting the final successful configuration.
 
 ---
 
-## Symptoms
+## Issue 1: NoCredentials Error Connecting to RDS from EC2
 
-The PostgreSQL connection from the EC2 instance did not work as expected.
+### Symptom
 
-The problem required checking more than just the PostgreSQL username and password.
-
-The following layers were investigated:
-
-1. EC2 configuration
-2. IAM permissions
-3. VPC networking
-4. RDS security group
-5. PostgreSQL configuration and authentication
-
----
-
-## Investigation
-
-### Step 1 — Check the RDS Endpoint
-
-The RDS endpoint was confirmed and used as the database host.
-
-The PostgreSQL connection format was:
-
-```bash
-psql -h <RDS-ENDPOINT> -U postgres -d postgres
-```
-
----
-
-### Step 2 — Check PostgreSQL Port
-
-PostgreSQL uses TCP port:
+The first attempt to connect to the database from the EC2 instance failed. The embedded AWS CLI call inside the `psql` command returned:
 
 ```text
-5432
+aws: [ERROR]: An error occurred (NoCredentials): Unable to locate credentials. You can configure credentials by running "aws login".
 ```
 
-The RDS security group was checked to ensure that PostgreSQL traffic was permitted.
-
-The intended security model was to allow PostgreSQL traffic from the authorized EC2 security group rather than opening the database to the entire internet.
-
----
-
-### Step 3 — Check EC2 Permissions
-
-The EC2 instance's AWS permissions were investigated.
-
-The EC2 instance did not initially have the required IAM role associated with it.
-
-An IAM role was therefore created/configured and attached to the EC2 instance.
-
-After the role was attached, the EC2 instance had the AWS permissions required for the lab.
-
----
-
-## Resolution
-
-An IAM role was attached to the EC2 instance.
-
-After correcting the EC2 permissions and verifying the RDS/network configuration, the PostgreSQL connection was successful.
-
-The EC2 instance was able to connect to the RDS PostgreSQL server using `psql`.
-
-A successful PostgreSQL session displayed:
+Because the password subshell failed, `psql` had no password to send and fell back to an interactive prompt, then failed to connect:
 
 ```text
-postgres=>
+psql: error: connection to server at "ubuntu-tech-rds.cvsu60uas78f.us-east-2.rds.amazonaws.com" (10.0.3.42), port 5432 failed: fe_sendauth: no password supplied
 ```
+
+**Evidence:** `11-psql-connect-failed-nocredentials.png`
+
+### Investigation
+
+The EC2 instance had no IAM role attached. Without one, the AWS CLI running on the instance had no credentials to call Secrets Manager and retrieve the database password — this failure happens before any network connection to RDS is even attempted.
+
+### Resolution
+
+An IAM role, `Ubuntu-Tech-RDS-EC2-Role`, was created with the `AWSSecretsManagerClientReadOnlyAccess` managed policy (`12-iam-role-created-secrets-access.png`) and attached to the instance (`13-iam-role-attached-to-ec2.png`). The active role was confirmed with `aws sts get-caller-identity`, which returned an assumed-role ARN for `Ubuntu-Tech-RDS-EC2-Role` (`14-verify-role-sts-get-caller-identity.png`). Re-running the identical `psql` command then succeeded, and the resulting session was used to create and query the `employees` table (`15-psql-create-insert-select-success.png`).
+
+### Lesson
+
+An EC2 instance calling another AWS service's API — such as Secrets Manager — needs an IAM role explicitly granting that permission. A security group only controls network traffic; it has no bearing on whether the instance is authorized to call AWS APIs. Avoid embedding database passwords directly in commands or scripts — retrieving them through an IAM role and Secrets Manager keeps the password out of shell history and script files.
 
 ---
 
-# Important Concept — IAM vs Security Groups vs PostgreSQL Authentication
+## Issue 2: Same Error Reproduced on a Second Instance
 
-One of the main lessons from this issue was that AWS access is controlled by multiple layers.
+### Symptom
 
-### IAM
+A second EC2 instance (`ip-172-31-41-176`) ran the identical `export RDSHOST=...` / `psql` command and hit the same `NoCredentials` error seen in Issue 1.
 
-IAM controls what an AWS identity is allowed to do.
+**Evidence:** `16-second-instance-same-credentials-error.png`
 
-```text
-EC2 → IAM → AWS permissions
-```
+### What This Does and Doesn't Show
 
-### Security Groups
+This screenshot is evidence that the same missing-IAM-role failure reproduces on a different instance — it is not evidence about network-level access control. The command fails at the `aws secretsmanager get-secret-value` step inside the password subshell, before `psql` ever attempts to open a connection to the RDS instance. So this screenshot does not confirm or rule out whether `ubuntu-tech-rds-sg` would have allowed or blocked this instance at the network layer.
 
-Security groups control network traffic.
+**Not pictured:** whether this second instance's security group is even one of the entries permitted in `ubuntu-tech-rds-sg`'s inbound rules (`08-security-group-rules-ec2-inbound.png` lists the allowed groups), and whether this instance is in the same VPC as the RDS instance at all — its IP (`172.31.x.x`) falls in the AWS default-VPC CIDR range, not the `10.0.0.0/16` range used by `ubuntu-tech-vpc`. A real network-level access-control test would require attaching valid credentials (or the IAM role) to this instance first, and then observing whether the `psql` connection itself succeeds, is refused, or times out.
 
-```text
-EC2 → Security Group → TCP 5432 → RDS
-```
+### Lesson
 
-### PostgreSQL Authentication
-
-PostgreSQL controls database-level authentication.
-
-```text
-PostgreSQL User + Password → Database
-```
-
-These controls solve different problems.
-
-A successful connection requires the relevant layers to be configured correctly.
+IAM authorization and network reachability are two independent layers of access control, and a failure at one layer can look identical to a failure at the other in a terminal. Confirming that a connection is blocked requires isolating which layer actually rejected it, rather than assuming a security-group boundary from a credentials error.
 
 ---
 
-# Issue 2 — Verifying Database Access Restrictions
-
-## Problem
-
-The lab required more than simply demonstrating that the authorized EC2 instance could connect.
-
-The database should also reject connections from an unauthorized resource.
-
-This was important for demonstrating that the RDS database was not simply exposed to every resource that could reach the AWS environment.
-
----
-
-## Expected Security Model
-
-```text
-Authorized EC2
-      |
-      | Allowed
-      v
-RDS PostgreSQL
-      ^
-      |
-      X
-Unauthorized EC2
-      |
-      | Blocked
-```
-
-The RDS security group should allow PostgreSQL traffic from the authorized EC2 security group.
-
-An EC2 instance that does not meet that security-group requirement should not be able to establish the network connection to PostgreSQL.
-
----
-
-# Troubleshooting Checklist
-
-When an EC2 instance cannot connect to an RDS PostgreSQL database, check the following in order.
-
-## 1. RDS Status
-
-Confirm that the RDS instance is:
-
-```text
-Available
-```
-
----
-
-## 2. RDS Endpoint
-
-Confirm that the correct RDS endpoint is being used.
-
-```bash
-psql -h <RDS-ENDPOINT> -U postgres -d postgres
-```
-
----
-
-## 3. PostgreSQL Port
-
-Confirm that PostgreSQL is using:
-
-```text
-TCP 5432
-```
-
----
-
-## 4. Security Group
-
-Check the RDS inbound rules.
-
-The preferred configuration for this lab is:
-
-```text
-Type: PostgreSQL
-Protocol: TCP
-Port: 5432
-Source: EC2 Security Group
-```
-
-Avoid unnecessarily using:
-
-```text
-0.0.0.0/0
-```
-
-for a database.
-
----
-
-## 5. VPC and Subnets
-
-Confirm that the EC2 instance and RDS instance have network connectivity through the configured VPC.
-
-Check:
-
-* VPC
-* Subnets
-* Route tables
-* Security groups
-* Network ACLs if applicable
-
----
-
-## 6. DNS Resolution
-
-From the EC2 instance:
-
-```bash
-nslookup <RDS-ENDPOINT>
-```
-
-The endpoint should resolve to an IP address.
-
----
-
-## 7. Test Port 5432
-
-From the EC2 instance:
-
-```bash
-nc -zv <RDS-ENDPOINT> 5432
-```
-
-If the port is reachable, the result should indicate a successful TCP connection.
-
----
-
-## 8. IAM Identity
-
-If AWS permissions are involved, verify the identity being used by the EC2 instance:
-
-```bash
-aws sts get-caller-identity
-```
-
-This can help determine whether the EC2 instance is operating with the expected IAM role.
-
----
-
-## 9. PostgreSQL Authentication
-
-If network connectivity works but `psql` still fails, check:
-
-* Username
-* Password
-* Database name
-* RDS endpoint
-* PostgreSQL port
-
-Example:
-
-```bash
-psql -h <RDS-ENDPOINT> -U postgres -d postgres
-```
-
----
-
-# Lessons Learned
-
-This troubleshooting exercise demonstrated that cloud database connectivity should be diagnosed in layers rather than assuming that a single AWS configuration controls access.
-
-The main troubleshooting sequence was:
-
-```text
-EC2
- ↓
-IAM permissions
- ↓
-VPC/network
- ↓
-Security Group
- ↓
-TCP 5432
- ↓
-RDS
- ↓
-PostgreSQL authentication
- ↓
-Database
-```
-
-The most important lesson was that **network access, AWS permissions, and database authentication are separate controls**.
-
-The issue was resolved by correcting the EC2 IAM configuration and verifying the surrounding RDS network configuration.
-
-This provided practical experience troubleshooting a managed AWS database rather than simply deploying one.
+## Troubleshooting Approach
+
+The main troubleshooting approach used in this lab was:
+
+1. Identify the exact symptom and the exact command that produced it.
+2. Read the error message closely to determine which layer failed (AWS CLI/IAM vs. network/`psql`).
+3. Check whether the instance has the IAM permissions the command depends on.
+4. Verify the fix with an independent command (`aws sts get-caller-identity`) before retrying the original operation.
+5. Avoid attributing a result to a layer (e.g., security groups) that the evidence doesn't actually test.
