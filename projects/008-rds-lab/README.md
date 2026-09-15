@@ -1,383 +1,138 @@
-# Amazon RDS PostgreSQL Database Lab
+# Amazon RDS PostgreSQL Lab
 
 ## Overview
 
-This lab demonstrates how Ubuntu Tech Solutions can use **Amazon Relational Database Service (Amazon RDS)** to host a managed PostgreSQL database instead of running the database directly on an EC2 instance.
+This project demonstrates deploying a managed PostgreSQL database with Amazon RDS into private subnets, and connecting to it from an EC2 instance using an IAM role and AWS Secrets Manager instead of hardcoded credentials.
 
-The lab focuses on:
+The environment was built for Ubuntu Tech Solutions, a fictional technology company that needs a backend relational database for internal applications without exposing that database directly to the internet or storing its password in plaintext.
 
-* Creating a PostgreSQL RDS database
-* Configuring network access between EC2 and RDS
-* Connecting to the database from an authorized EC2 instance
-* Creating and managing a PostgreSQL database
-* Troubleshooting failed database connectivity
-* Using an IAM role with the EC2 instance where required
-* Testing access from an unauthorized source
+## Business Scenario
 
-### Business Scenario
+Ubuntu Tech Solutions did not yet have a managed database for internal application data. This created several problems:
 
-Ubuntu Tech Solutions is developing a cloud-based application that requires a reliable relational database.
+* No centralized, relational data store for applications such as an internal employee/department directory.
+* Database credentials would otherwise need to be shared or hardcoded manually.
+* A database with a public endpoint would be an unnecessary security risk.
 
-Instead of managing PostgreSQL directly on an EC2 server, the company uses Amazon RDS to provide a managed database service.
-
-This allows the company to focus on the application while AWS handles much of the underlying database infrastructure, including database provisioning, backups, patching, and infrastructure management.
-
----
+To address this, an RDS PostgreSQL instance was deployed into private subnets that are not reachable from the internet, and the database password was stored in AWS Secrets Manager rather than in any script or configuration file. An EC2 instance retrieves that password at connection time using a scoped IAM role.
 
 ## Architecture
 
-The lab uses the following architecture:
-
 ```text
-                    AWS Cloud
-                        |
-              +---------+---------+
-              |                   |
-          EC2 Instance         Amazon RDS
-          Ubuntu Server       PostgreSQL
-              |                   |
-              +------ Network -----+
+                        VPC — ubuntu-tech-vpc (10.0.0.0/16)
+   +--------------------------------------------------------------+
+   |                                                                |
+   |   Public Subnets (us-east-2a/2b)      Private Subnets (2a/2b) |
+   |  +------------------------+        +--------------------------+
+   |  |   EC2 instance         |        |   ubuntu-tech-rds        |
+   |  |   (postgresql-client)  |------->|   PostgreSQL, db.t4g.micro|
+   |  |                        | 5432   |   No public access        |
+   |  +------------------------+        +--------------------------+
+   |          |    ^                                                |
+   |          |    | IAM role                                       |
+   |          v    |                                                |
+   |   Secrets Manager (DB password)                                |
+   +--------------------------------------------------------------+
 ```
 
-The EC2 instance acts as the authorized client used to administer and test the PostgreSQL database.
+## AWS Services Used
 
-The RDS instance hosts the PostgreSQL database.
-
----
-
-## Technologies Used
-
-* Amazon RDS
-* PostgreSQL
-* Amazon EC2
-* Amazon VPC
+* Amazon VPC (subnets, route tables)
+* Amazon RDS (PostgreSQL)
+* DB Subnet Groups
 * Security Groups
-* AWS IAM
-* Ubuntu Linux
-* PostgreSQL CLI (`psql`)
+* AWS Secrets Manager
+* IAM Roles
+* Amazon EC2
+* Amazon CloudWatch (RDS monitoring)
 
----
+## Implementation
 
-# Lab Objectives
+### 1. Network Preparation
 
-By completing this lab, I demonstrated the ability to:
+The existing VPC (`ubuntu-tech-vpc`, `10.0.0.0/16`) already had public and private subnets across two Availability Zones. A dedicated private route table (`ubuntu-tech-db-private-rt`) was created and explicitly associated with both private subnets, keeping database traffic off the public route table.
 
-1. Deploy a managed PostgreSQL database using Amazon RDS.
-2. Configure network access between EC2 and RDS.
-3. Connect to an RDS PostgreSQL database from Linux.
-4. Create and manage PostgreSQL databases.
-5. Troubleshoot database connectivity problems.
-6. Configure an IAM role for an EC2 instance when required.
-7. Verify that database access is restricted to authorized resources.
+*(`01-vpc-resource-map-subnets-routes.png`, `04-db-private-route-table-created.png`, `05-route-table-subnet-associations.png`)*
 
----
+### 2. DB Subnet Group
 
-# 1. Create the RDS PostgreSQL Database
+A DB subnet group (`ubuntu-tech-db-subnet-group`) was created spanning the two private subnets (`us-east-2a`, `us-east-2b`), so RDS can place the instance without any public exposure.
 
-An Amazon RDS PostgreSQL instance was created using the AWS Management Console.
+*(`02-db-subnet-group-created.png`)*
 
-The database was configured to run PostgreSQL and placed within the appropriate VPC and subnet configuration.
+### 3. Security Group
 
-The RDS security group was configured to allow PostgreSQL traffic on:
+A dedicated security group (`ubuntu-tech-rds-sg`) was created, allowing inbound PostgreSQL traffic (TCP 5432) only from specific EC2 security groups rather than from any IP range.
 
-```text
-TCP 5432
-```
+*(`03-rds-security-group-created.png`, `08-security-group-rules-ec2-inbound.png`)*
 
-Access was restricted to the appropriate EC2 security group rather than allowing PostgreSQL access from the entire internet.
+### 4. RDS Instance
 
-### Why port 5432?
+The `ubuntu-tech-rds` PostgreSQL instance (`db.t4g.micro`, single-AZ, `us-east-2a`) was launched using the subnet group and security group above, with a connection set up between the instance and the EC2 client. Credentials are managed through Secrets Manager rather than IAM database authentication.
 
-PostgreSQL uses TCP port **5432** by default.
+*(`06-rds-instance-created-connected-ec2.png`, `07-rds-connection-code-snippet.png`)*
 
----
+### 5. Connecting From EC2
 
-# 2. Configure EC2 Connectivity
+The PostgreSQL client was installed on the EC2 instance, and the RDS TLS certificate bundle was downloaded so the connection could use `sslmode=verify-full`. The first connection attempt failed with an IAM credentials error — see `troubleshooting.md`, Issue 1. An IAM role scoped to read-only Secrets Manager access was created and attached to the instance, verified with `aws sts get-caller-identity`, after which the connection succeeded.
 
-The Ubuntu EC2 instance was used as the authorized client for connecting to the RDS database.
+*(`09-ec2-install-postgresql-client.png`, `10-ec2-download-cert-set-rdshost.png`, `11-psql-connect-failed-nocredentials.png`, `12-iam-role-created-secrets-access.png`, `13-iam-role-attached-to-ec2.png`, `14-verify-role-sts-get-caller-identity.png`)*
 
-The EC2 instance and RDS database were configured so that the EC2 instance could communicate with the RDS instance through the VPC.
+### 6. Database Validation
 
-The RDS security group allowed inbound PostgreSQL traffic from the EC2 security group.
+An `employees` table was created and populated with sample IT/HR records, then queried successfully over the encrypted connection — confirming the database is reachable, writable, and readable end-to-end from the authorized instance.
 
-This is preferable to allowing:
+*(`15-psql-create-insert-select-success.png`)*
 
-```text
-0.0.0.0/0
-```
+### 7. Credential Handling on a Second Instance
 
-because database access should not be publicly available unless there is a specific requirement for it.
+A second EC2 instance without the IAM role attached was used to re-run the same connection command, and it reproduced the identical Secrets Manager credentials error from Issue 1.
 
----
+**Not pictured / caveat:** this does not test whether `ubuntu-tech-rds-sg` blocks network access from that instance — the command fails at the AWS CLI/Secrets Manager step, before `psql` ever attempts to reach the database over the network. See `troubleshooting.md`, Issue 2, for what this screenshot does and doesn't demonstrate.
 
-# 3. Install PostgreSQL Client
+*(`16-second-instance-same-credentials-error.png`)*
 
-The PostgreSQL client tools were installed on the Ubuntu EC2 instance.
+### 8. Monitoring and Configuration Review
 
-The `psql` command-line client was then used to connect to the RDS PostgreSQL server.
+The instance's status, DB Load metric, and backup/maintenance settings (7-day automated backups, defined backup and maintenance windows) were reviewed in the RDS console.
 
-Example:
+*(`17-rds-monitoring-status-available.png`, `18-rds-db-load-metrics.png`, `19-rds-maintenance-backups-config.png`)*
 
-```bash
-psql -h <RDS-ENDPOINT> -U postgres -d postgres
-```
+## Validation
 
-The RDS endpoint was used as the database host.
+The completed environment was validated by checking:
 
----
+* The RDS instance reached the `Available` status with the expected engine (PostgreSQL) and instance class.
+* The database subnet group and route table placed the instance entirely within private subnets.
+* The security group restricted inbound access to specific EC2 security groups on port 5432 only.
+* An authorized EC2 instance could install a client, retrieve the DB password from Secrets Manager via an IAM role, and connect using TLS.
+* Data could be created, inserted, and queried successfully (`employees` table).
+* Automated backups were enabled with a defined backup window.
 
-# 4. Initial Connectivity Problem
+## Key Concepts Demonstrated
 
-During testing, the EC2 instance was initially **unable to connect to the RDS database**.
+### Private Subnet Isolation
 
-This was an important troubleshooting step because the problem demonstrated that simply having an EC2 instance and an RDS database in AWS does not automatically mean that the EC2 instance has the required permissions or access.
+The database has no public endpoint and lives only in private subnets, reducing its exposure to the internet.
 
-The connection attempt failed rather than immediately providing access to the database.
+### Credential Management via Secrets Manager
 
-This led to troubleshooting the EC2 instance's AWS permissions and configuration.
+The database password is never stored in a script or on disk — it is fetched at connection time from Secrets Manager.
 
----
+### IAM Roles for EC2
 
-# 5. Attach an IAM Role to EC2
+Rather than embedding AWS credentials on the instance, an IAM role scoped to read-only Secrets Manager access was attached directly to the EC2 instance.
 
-As part of troubleshooting, an **IAM role was created/attached to the EC2 instance**.
+### Defense in Depth
 
-The role provided the EC2 instance with the AWS permissions required for the lab.
+Reaching the database requires clearing two independent layers: network-level access (security group) and AWS API authorization (IAM role for Secrets Manager). Issue 2 in `troubleshooting.md` discusses why a single failure doesn't confirm both layers at once.
 
-After the role was attached, the EC2 instance was able to perform the required AWS-authenticated operations.
+## Lessons Learned
 
-### Important distinction
+The main lesson from this lab was that an EC2 instance needs an explicit IAM role before it can call other AWS service APIs — attaching a security group alone is not enough to authorize the instance to read the database password from Secrets Manager. Full detail on this diagnostic process is in `troubleshooting.md`, Issue 1.
 
-IAM controls **AWS-level permissions**.
+A secondary lesson, covered in Issue 2, was to be careful about what a given error actually proves: a Secrets Manager credentials failure looks similar to a network connectivity failure in the terminal, but they are different layers and require different fixes.
 
-The RDS security group controls **network-level access**.
+## Conclusion
 
-PostgreSQL authentication controls **database-level access**.
-
-Therefore, successful RDS connectivity can involve multiple layers:
-
-```text
-EC2
- |
- | AWS permissions
- v
-IAM
- |
- | Network access
- v
-VPC / Security Group
- |
- | PostgreSQL connection
- v
-RDS PostgreSQL
- |
- | Database authentication
- v
-PostgreSQL User
-```
-
-This troubleshooting process demonstrated why cloud connectivity problems need to be checked layer by layer rather than assuming that one configuration controls everything.
-
----
-
-# 6. Connect to PostgreSQL
-
-After the EC2 configuration was corrected, the PostgreSQL client was used to connect to the RDS instance.
-
-Once connected, the PostgreSQL prompt appeared:
-
-```text
-postgres=>
-```
-
-This confirmed that the EC2 instance could successfully communicate with the RDS PostgreSQL database.
-
----
-
-# 7. Create the Application Database
-
-A database was created for the Ubuntu Tech Solutions application:
-
-```sql
-CREATE DATABASE ubuntu_tech_db;
-```
-
-PostgreSQL returned:
-
-```text
-CREATE DATABASE
-```
-
-The new database was then selected:
-
-```sql
-\c ubuntu_tech_db
-```
-
-The PostgreSQL prompt changed to indicate that the session was connected to:
-
-```text
-ubuntu_tech_db
-```
-
-This demonstrated that the RDS PostgreSQL instance was functioning as the database server for the application.
-
----
-
-# 8. Database Connectivity Testing
-
-The lab also included testing whether database access was restricted to authorized resources.
-
-The objective was not simply to prove that the authorized EC2 instance could connect.
-
-The objective was also to verify that an unauthorized resource should **not** be able to connect.
-
-The expected security model was:
-
-```text
-Authorized EC2
-       |
-       | Allowed
-       v
-RDS PostgreSQL
-
-
-Unauthorized EC2
-       |
-       | Blocked
-       X
-RDS PostgreSQL
-```
-
-Testing access from another EC2 instance provides a practical way to demonstrate this restriction.
-
-The unauthorized instance should fail to establish the PostgreSQL connection when it does not meet the RDS security group's access requirements.
-
----
-
-# 9. Security Considerations
-
-The RDS database was intentionally not configured to allow unrestricted internet access.
-
-The security group should follow the principle of least privilege.
-
-Instead of:
-
-```text
-PostgreSQL
-Source: 0.0.0.0/0
-```
-
-the preferred configuration is:
-
-```text
-PostgreSQL
-Port: 5432
-Source: EC2 Security Group
-```
-
-This means that only resources associated with the authorized security group can reach the database over PostgreSQL's network port.
-
-Additional security is provided by PostgreSQL authentication and AWS IAM permissions where applicable.
-
----
-
-# Troubleshooting
-
-## Problem: EC2 could not connect to RDS
-
-### Symptoms
-
-The EC2 instance was unable to establish the expected connection to the RDS PostgreSQL database.
-
-### Investigation
-
-The configuration was checked across multiple layers:
-
-1. EC2 configuration
-2. IAM permissions
-3. RDS security group
-4. VPC/network configuration
-5. PostgreSQL connection parameters
-
-### Resolution
-
-An IAM role was attached to the EC2 instance to provide the required AWS permissions.
-
-After the EC2 permissions were corrected and the network configuration was in place, the EC2 instance was able to connect to the RDS PostgreSQL database.
-
-### Lesson Learned
-
-Cloud connectivity is not controlled by a single AWS setting.
-
-When troubleshooting RDS connectivity, it is important to separate:
-
-* **IAM permissions**
-* **Security group rules**
-* **VPC/network connectivity**
-* **Database authentication**
-* **Database configuration**
-
-Checking these individually makes it much easier to identify the actual cause of a connection failure.
-
----
-
-# Key Commands
-
-### Connect to PostgreSQL
-
-```bash
-psql -h <RDS-ENDPOINT> -U postgres -d postgres
-```
-
-### Create the application database
-
-```sql
-CREATE DATABASE ubuntu_tech_db;
-```
-
-### Connect to the application database
-
-```sql
-\c ubuntu_tech_db
-```
-
-### View databases
-
-```sql
-\l
-```
-
-### Exit PostgreSQL
-
-```sql
-\q
-```
-
----
-
-# Skills Demonstrated
-
-This lab demonstrates practical experience with:
-
-* AWS RDS
-* PostgreSQL
-* EC2
-* IAM
-* VPC networking
-* Security groups
-* Linux command line
-* Database administration
-* Cloud troubleshooting
-* Least-privilege access
-* AWS infrastructure troubleshooting
-
----
-
-# Business Outcome
-
-Ubuntu Tech Solutions now has a managed PostgreSQL database that can be accessed by authorized application infrastructure without requiring the company to manage the underlying database server directly.
-
-The lab also demonstrated how access can be restricted to trusted AWS resources and how connectivity problems can be diagnosed across the IAM, networking, security group, and database layers.
-
-This provides a foundation for connecting future cloud applications to a managed relational database.
+The completed environment demonstrates a managed relational database that is isolated from the public internet and accessed only through IAM-authorized, credential-free connections from application servers. This gives Ubuntu Tech Solutions a repeatable pattern for standing up backend databases without hardcoding secrets, and a foundation for adding read replicas, Multi-AZ failover, or IAM database authentication in future labs.
